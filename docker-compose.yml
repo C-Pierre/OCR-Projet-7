@@ -1,0 +1,27 @@
+services:
+
+  back:
+    build:
+      context: ./back
+    container_name: microcrm-back
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - microcrm-net
+
+  front:
+    build:
+      context: ./front
+    container_name: microcrm-front
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - back
+    networks:
+      - microcrm-net
+
+networks:
+  microcrm-net:
