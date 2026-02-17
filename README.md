@@ -8,8 +8,8 @@ MicroCRM est une application de démonstration basique ayant pour être objectif
 
 L'application MicroCRM est une implémentation simplifiée d'un ["CRM" (Customer Relationship Management)](https://fr.wikipedia.org/wiki/Gestion_de_la_relation_client). Les fonctionnalités sont limitées à la création, édition et la visualisations des individus liés à des organisations.
 
-![Page d'accueil](./_misc_/screenshots/screenshot_1.png)
-![Édition de la fiche d'un individu](./_misc/screenshots/screenshot_2.png)
+![Page d'accueil](./_doc_/screenshots/screenshot_1.png)
+![Édition de la fiche d'un individu](./_doc/screenshots/screenshot_2.png)
 
 ## Code source
 
