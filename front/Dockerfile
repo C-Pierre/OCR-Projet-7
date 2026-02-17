@@ -1,17 +1,19 @@
+# Étape 1 : Build Angular
 FROM node:20-alpine AS build
 
 WORKDIR /app
+COPY package*.json ./
+RUN npm ci
 COPY . .
+RUN npm run build -- --configuration production
 
-RUN npm ci \
-    && npx @angular/cli build --configuration production
+# Étape 2 : Nginx non-root
+FROM nginx:alpine
 
-FROM caddy:2-alpine
+COPY --from=build /app/dist/microcrm/browser /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-WORKDIR /app
-
-COPY --from=build /app/dist/microcrm/browser /usr/share/caddy
-COPY Caddyfile /etc/caddy/Caddyfile
 
 EXPOSE 80
-EXPOSE 443
+
+CMD ["nginx", "-g", "daemon off;"]

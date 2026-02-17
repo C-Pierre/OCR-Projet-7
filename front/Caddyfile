@@ -1,8 +1,0 @@
-:80
-
-root * /usr/share/caddy
-file_server
-
-handle_path /api/* {
-    reverse_proxy back:8080
-}
