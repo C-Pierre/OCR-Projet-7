@@ -21,7 +21,7 @@ services:
     container_name: microcrm-front
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8081:80"
       - "443:443"
     depends_on:
       - back
