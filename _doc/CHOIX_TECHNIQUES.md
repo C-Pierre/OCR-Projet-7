@@ -1,12 +1,12 @@
 # Choix techniques
 
-## Conteneurisation - Exerice 1 - Partie 3
+## Conteneurisation - Exerice 1 - Partie 4
 
 ### Dockerfiles
 
 --- 
 
-#### Backend (./back/Dockerfile)
+#### Backend
 
 Build stage : gradle:8-jdk17-alpine
 Image officielle Gradle + JDK 17
@@ -23,21 +23,21 @@ Port exposé : 8080 → standard Spring Boot
 
 ---
 
-#### Frontend (./front/Dockerfile)
+#### Frontend
 
 Build stage : node:20-alpine
 Node officiel, version fixe 20
 Alpine = légère
 
 npm ci pour build reproductible
-Runtime stage : caddy:2-alpine
+Runtime stage : nginx:2-alpine
 Serveur web officiel, Alpine minimaliste
 Multi-stage build pour ne pas embarquer Node ou Angular build dans runtime
 
 Ports exposés : 80 / 443
 HTTPS en dev : optionnel, HTTP suffisant pour développement
 
-Reverse proxy : Caddy peut servir le front et rediriger /api/* vers backend
+Reverse proxy : nginx peut servir le front et rediriger /api/* vers backend
 
 ---
 
@@ -57,12 +57,14 @@ Avantages : possibilité de scale chaque service indépendamment, logs séparés
 
 ### Bonnes pratiques sécurité
 
-Images officielles, maintenues et fiables : Node, Gradle, Eclipse Temurin, Caddy
+Images officielles, maintenues et fiables : Node, Gradle, Eclipse Temurin, Nginx
 Alpine ou slim → minimaliste → réduit surface d’attaque
 Multi-stage build → runtime propre et léger
 Suppression de packages build inutiles dans runtime
 Utilisateur non-root pour backend
 Ports exposés uniquement nécessaires
+
+---
 
 ### Utilisation de Trivy pour la sécurité des images Docker
 
