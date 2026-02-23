@@ -14,19 +14,38 @@ Il s'exécute à chaque **push** ou **pull request** sur `main` et `develop`.
 ```
 push / pull_request
         │
-        ├── [Job 1] backend   ──── Gradle build + tests + Sonar (back)
-        ├── [Job 2] frontend  ──── npm ci + tests + build prod + Sonar (front)
+        ├── [Job 1] commitlint  ──── Validation des messages de commit
+        ├── [Job 2] backend     ──── Gradle build + tests + Sonar + artefacts
+        ├── [Job 3] frontend    ──── npm ci + tests + build prod + Sonar + artefacts
         │
-        └── [Job 3] docker-build  (dépend de 1 & 2, branches main/develop uniquement)
-                ├── Build image back + scan Trivy
-                └── Build image front + scan Trivy
+        ├── [Job 4] docker-build  (dépend de backend & frontend — main/development)
+        │       ├── Build image back + scan Trivy
+        │       └── Build image front + scan Trivy
+        │
+        └── [Job 5] release (semantic-release — main/development)
+                ├── Génération version + changelog
+                ├── Publication GitHub Release
+                ├── Upload artefacts (JAR + Angular zip)
+                └── Tag & push images Docker versionnées
 ```
 
 ---
 
 ### Détail des jobs
 
-#### Job 1 — Back-end
+#### Job 1 — CommitLint
+
+| Étape | Outil | Justification |
+|---|---|---|
+| Checkout complet |`actions/checkout@v4` |	Permet d’analyser l’historique des commits |
+| Setup Node + cache npm | `actions/setup-node@v4` |	Installation rapide des dépendances |
+| Installation commitlint	| `npm` |	Validation des messages Conventional Commits |
+| Validation PR	commitlint | `--from/--to` | Vérifie tous les commits de la PR |
+| Validation push	commitlint `HEAD~1..HEAD` | Vérifie le dernier commit |
+
+##### Objectif : garantir la compatibilité avec semantic-release.
+
+#### Job 2 — Back-end
 
 | Étape | Outil | Justification |
 |---|---|---|
@@ -35,9 +54,10 @@ push / pull_request
 | JDK 21 | `actions/setup-java@v4` | Correspond à la version utilisée dans le Dockerfile back |
 | Build + tests | `./gradlew build --no-daemon` | Compile **et** exécute les tests en une seule commande Gradle |
 | Publier résultats JUnit | `actions/upload-artifact@v4` | Permet de récupérer les rapports de tests via l’interface GitHub Actions |
+| Upload JAR | `actions/upload-artifact@v4` | Artefact utilisé pour la release |
 | Sonar back | plugin Gradle `sonar` | Analyse qualité + sécurité du code Java côté SonarCloud |
 
-#### Job 2 — Front-end
+#### Job 3 — Front-end
 
 | Étape | Outil | Justification |
 |---|---|---|
@@ -48,15 +68,34 @@ push / pull_request
 | Tests headless | `npm test -- --watch=false` | Exécution non-interactive en environnement CI |
 | Publier résultats tests | `actions/upload-artifact@v4` | Permet de récupérer les rapports de couverture |
 | Build prod | `npm run build -- --configuration production` | Vérifie que le build de production fonctionne correctement |
+| Upload dist | `actions/upload-artifact@v4` | Artefact utilisé pour la release |
 | Sonar front | `SonarSource/sonarqube-scan-action@v5` | Analyse qualité + sécurité du code front-end via SonarCloud |
 
-#### Job 3 — Docker Build & Scan
+#### Job 4 — Docker Build & Scan
 
 Conditionné à la réussite des deux jobs précédents (`needs: [backend, frontend]`).  
 - Utilise le **cache GitHub Actions** (`type=gha`) pour accélérer les builds Docker successifs.  
 - Les images ne sont **pas poussées** (`push: false`) — ce job valide uniquement la cohérence des Dockerfiles en CI.  
 - **Trivy** est utilisé pour scanner les images Docker back et front sur les vulnérabilités **CRITICAL**.  
 - Les images sont taguées avec `${{ github.sha }}` pour correspondre à l’état exact du commit scanné.
+
+#### Job 5 - Semantic Release
+
+Exécuté uniquement sur main et development.
+Dépend du job 4 Docker.
+
+| Étape | Description |
+|---|---|
+| Installation semantic-release	| Prépare les outils de versionning |
+| Download artefacts | Récupère JAR et build Angular |
+| Zip Angular	| Prépare l’artefact release |
+| Semantic release | Calcule version + génère changelog |
+| GitHub Release	| Publication automatique |
+| Upload artefacts	| Ajout JAR + frontend zip |
+| Tag Docker | Tag images avec version SemVer |
+| Push Docker	| Publication registry |
+
+##### Objectif : automatisation complète du cycle de release sans intervention humaine.
 
 ---
 
@@ -232,3 +271,113 @@ Pour lancer l'analyse des images, une fois `trivy` installé, exécuter les comm
         trivy image projet_7-front
         trivy image --format html --output trivy-report-back.html --scanners vuln projet_7-back
         trivy image --format html --output trivy-report-front.html --scanners vuln projet_7-front
+
+---
+
+## Politique de versioning
+
+La stratégie de versioning repose sur trois outils complémentaires :
+
+SemVer 2.0.0 → gestion des numéros de version
+Conventional Commits → format des messages de commit
+semantic-release → automatisation complète des releases
+
+Objectif : zéro gestion manuelle des versions.
+
+### Convention de version (SemVer)
+
+Format : MAJOR.MINOR.PATCH
+
+Type de changement	Incrément
+Bug fix compatible	PATCH
+Nouvelle fonctionnalité compatible	MINOR
+Breaking change	MAJOR
+
+Les versions 0.x.y sont réservées au développement initial.
+La première version stable est 1.0.0.
+
+### Conventional Commits
+
+Format obligatoire :
+
+-   `<type>(<scope>): <description>`
+
+Types principaux :
+
+-     Type | Effet version
+-     feat | MINOR
+-     fix	| PATCH
+-     feat! / BREAKING CHANGE	| MAJOR
+-     chore, docs, test, ci…	| aucun
+
+Les commits sont validés automatiquement par commitlint dans la CI.
+
+### Stratégie de branches
+
+Branches principales :
+
+main → production (release stable)
+develop → intégration (release candidate)
+feature/* → nouvelles fonctionnalités
+hotfix/* → corrections urgentes
+
+Aucune branche release/* : develop sert de staging.
+
+### Cycle de release
+
+Feature branch depuis develop
+PR vers develop → CI + validation commits
+Merge → release candidate automatique (vX.Y.Z-rc)
+PR develop → main
+Merge → release stable automatique (vX.Y.Z) sur GitHub
+
+Le seul contrôle humain : validation de la PR vers main.
+
+### Automatisation
+
+Automatique :
+
+-     Tag Git
+-     Release GitHub
+-     Changelog
+-     Versionning
+-     Publication Docker
+
+Manuel :
+
+-     Validation fonctionnelle avant merge vers main
+
+### Artefacts de release
+
+Chaque release contient :
+
+backend-*.jar (Spring Boot)
+frontend-dist.zip (Angular)
+
+Images Docker versionnées :
+
+-   `ghcr.io/<owner>/projet_7/back:<version>`
+-   `ghcr.io/<owner>/projet_7/front:<version>`
+
+---
+
+## Secrets CI requis
+| Nom | Description |
+|---|---|
+| GITHUB_TOKEN | Authentification GitHub |
+| SONAR_TOKEN |	SonarCloud |
+| SONAR_PROJECT_KEY_BACK | Projet backend |
+| SONAR_ORGANIZATION	| Organisation Sonar |
+
+---
+
+## Variables CI requises
+| Nom | Description |
+|---|---|
+| DISTRIBUTION | temurin |
+| IMAGE_REPO |	projet_7 |
+| JAVA_VERSION | 21 |
+| NODE_VERSION	| 20 |
+| REGISTRY	| ghcr.io |
+| RETENTION_DAYS	| 7 |
+| SEVERITY	| CRITICAL |
