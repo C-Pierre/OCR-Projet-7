@@ -1,0 +1,39 @@
+{
+  "branches": [
+    {
+      "name": "main"
+    },
+    {
+      "name": "development",
+      "prerelease": "rc",
+      "channel": "rc"
+    }
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "./release-assets/back/*.jar",
+            "label": "Backend JAR"
+          },
+          {
+            "path": "./release-assets/frontend-dist.zip",
+            "label": "Frontend Angular dist"
+          }
+        ],
+        "successComment": false,
+        "failComment": false
+      }
+    ]
+  ]
+}

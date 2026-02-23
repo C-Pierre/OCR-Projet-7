@@ -4,8 +4,59 @@ on:
   push:
   pull_request:
 
+env:
+  REGISTRY: ${{ vars.REGISTRY }}
+  IMAGE_REPO: ${{ vars.IMAGE_REPO }}
+
 jobs:
-  # JOB 1 — Back-end (Gradle + Tests + Docker + Trivy + Sonar)
+
+  # JOB 1: COMMITLINT
+  commitlint:
+    name: Validate commit messages
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+      
+      - name: Cache node_modules for commitlint
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-commitlint-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-commitlint-
+      
+      - name: Install commitlint
+        run: |
+          npm install --save-dev @commitlint/cli @commitlint/config-conventional
+      
+      - name: Validate PR commits
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Validating all commits in the PR..."
+          npx commitlint \
+            --from ${{ github.event.pull_request.base.sha }} \
+            --to ${{ github.event.pull_request.head.sha }} \
+            --verbose
+      
+      - name: Validate last commit
+        if: github.event_name == 'push'
+        run: |
+          echo "Validating last commit only..."
+          echo "Commit SHA: ${{ github.sha }}"
+          npx commitlint --from HEAD~1 --to HEAD --verbose
+
+  # JOB 2: Back-end (Gradle + Tests + Docker + Trivy + Sonar)
   backend:
     name: Back-end — Build, Test, Docker & Sonar
     runs-on: ubuntu-latest
@@ -28,8 +79,8 @@ jobs:
       - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: "21"
-          distribution: "temurin"
+          java-version: ${{ vars.JAVA_VERSION }}
+          distribution: ${{ vars.DISTRIBUTION }}
 
       - name: Build & Tests back-end
         working-directory: ./back
@@ -42,6 +93,14 @@ jobs:
           name: backend-test-results
           path: back/build/reports/tests/test/
 
+      # Uploader le JAR pour la release
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: back/build/libs/*.jar
+          retention-days: ${{ vars.RETENTION_DAYS }}
+
       - name: Analyse SonarQube — Back-end
         working-directory: ./back
         env:
@@ -53,7 +112,7 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml
 
-  # JOB 2 — Front-end (npm + Tests + Docker + Trivy + Sonar)
+  # JOB 3: Front-end (npm + Tests + Docker + Sonar)
   frontend:
     name: Front-end — Build, Test, Docker & Sonar
     runs-on: ubuntu-latest
@@ -74,7 +133,7 @@ jobs:
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ vars.NODE_VERSION }}
 
       - name: Installation des dépendances
         working-directory: ./front
@@ -95,6 +154,14 @@ jobs:
         working-directory: ./front
         run: npm run build -- --configuration production
 
+      # Uploader le build Angular pour la release
+      - name: Upload Angular dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: front/dist/
+          retention-days: ${{ vars.RETENTION_DAYS }}
+
       - name: Analyse SonarQube — Front-end
         uses: SonarSource/sonarqube-scan-action@v6
         with:
@@ -104,12 +171,12 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
 
-  # JOB 3 — Build Docker (pour main/develop, optional)
+  # JOB 4: Build Docker (pour main/development, optional)
   docker-build:
     name: Build & Scan images Docker
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development'
 
     steps:
       - name: Checkout du code
@@ -150,7 +217,7 @@ jobs:
         with:
           context: ./back
           push: false
-          tags: projet_7-back:${{ github.sha }}
+          tags: ${{ vars.IMAGE_REPO }}-back:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -159,20 +226,157 @@ jobs:
         with:
           context: ./front
           push: false
-          tags: projet_7-front:${{ github.sha }}
+          tags: ${{ vars.IMAGE_REPO }}-front:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Scan Docker image back
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: projet_7-back:${{ github.sha }}
-          severity: CRITICAL
+          image-ref: ${{ vars.IMAGE_REPO }}-back:${{ github.sha }}
+          severity: ${{ vars.SEVERITY }}
           exit-code: 1
 
       - name: Scan Docker image front
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: projet_7-front:${{ github.sha }}
-          severity: CRITICAL
+          image-ref: ${{ vars.IMAGE_REPO }}-front:${{ github.sha }}
+          severity: ${{ vars.SEVERITY }}
           exit-code: 1
+
+  # JOB 5: RELEASE
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development'
+
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node.js with cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Cache node_modules for semantic-release
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-semantic-release-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-semantic-release-
+
+      - name: Install semantic-release dependencies
+        run: |
+          npm install --save-dev \
+            semantic-release@^22.0.0 \
+            @semantic-release/changelog@^6.0.0 \
+            @semantic-release/github@^9.0.0
+
+      # Télécharger les artefacts produits par les jobs précédents
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: ./release-assets/back/
+
+      - name: Download Angular dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: ./release-assets/front/
+
+      # Zipper le build Angular pour l'attacher à la release
+      - name: Zip Angular dist
+        run: |
+          cd ./release-assets
+          zip -r frontend-dist.zip front/
+          echo "Angular dist zipped: $(du -sh frontend-dist.zip)"
+
+      - name: Run semantic-release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          extra_plugins: |
+            @semantic-release/changelog@^6.0.0
+            @semantic-release/github@^9.0.0
+
+      # Attacher les artefacts à la release GitHub si une nouvelle version est publiée
+      - name: Upload artifacts to GitHub Release
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.semantic.outputs.new_release_version }}
+          files: |
+            ./release-assets/back/*.jar
+            ./release-assets/frontend-dist.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set safe Docker variables
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          SAFE_OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "SAFE_OWNER=$SAFE_OWNER" >> $GITHUB_ENV
+
+      - name: Login to GitHub Container Registry
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag Docker images with semantic version
+        if: steps.semantic.outputs.new_release_published == 'true'
+        env:
+          VERSION: ${{ steps.semantic.outputs.new_release_version }}
+        run: |
+          echo "Tagging Docker images with version: $VERSION"
+          
+          # Taguer l'image back
+          echo "Processing back image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:main-${{ github.sha }}
+          
+          docker tag ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:main-${{ github.sha }} \
+                     ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:$VERSION
+          docker tag ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:main-${{ github.sha }} \
+                     ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:latest
+          
+          docker push ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:$VERSION
+          docker push ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/back:latest
+          echo "[SUCCESS] - Back image tagged successfully"
+          
+          # Taguer l'image front (si elle existe)
+          echo "Checking for front image..."
+          if docker pull ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:main-${{ github.sha }} 2>/dev/null; then
+            echo "Processing front image..."
+            docker tag ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:main-${{ github.sha }} \
+                       ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:$VERSION
+            docker tag ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:main-${{ github.sha }} \
+                       ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:latest
+            
+            docker push ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:$VERSION
+            docker push ${{ env.REGISTRY }}/${{ env.SAFE_OWNER }}/${{ env.IMAGE_REPO }}/front:latest
+            echo "[SUCCESS] - Front image tagged successfully"
+          else
+            echo "[SUCCESS] - Front image not found, skipping..."
+          fi
+          
+          echo "[SUCCESS] - All images tagged with version $VERSION"
