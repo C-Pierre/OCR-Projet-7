@@ -5,7 +5,7 @@
 ### Vue d'ensemble
 
 Le pipeline est défini dans `.github/workflows/ci.yml`.  
-Il s'exécute à chaque **push** ou **pull request** sur `main` et `develop`.
+Il s'exécute à chaque **push** ou **pull request** sur `main` et `development`, et également à chaque pour sur `branche` mais partiellement
 
 ---
 
