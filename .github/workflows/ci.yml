@@ -38,6 +38,7 @@ jobs:
       
       - name: Install commitlint
         run: |
+          npm config set registry https://registry.npmjs.org/
           npm install --save-dev @commitlint/cli @commitlint/config-conventional
       
       - name: Validate PR commits

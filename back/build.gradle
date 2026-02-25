@@ -47,6 +47,8 @@ dependencies {
     implementation 'org.springframework:spring-core:6.2.11'
     implementation 'org.springframework:spring-webmvc:6.2.11'
 
+    implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
+
     runtimeOnly 'org.hsqldb:hsqldb'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
