@@ -1,0 +1,32 @@
+services:
+
+  back:
+    build:
+      context: ./back
+    container_name: ${APP_NAME}-back
+    restart: ${DOCKER_RESTART}
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    networks:
+      - ${DOCKER_NETWORK}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://${APP_HOST}:${APP_PORT}/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  front:
+    build:
+      context: ./front
+    container_name: ${APP_NAME}-front
+    restart: ${DOCKER_RESTART}
+    ports:
+      - ${APP_FRONT_PORT}
+      - ${APP_FRONT_PORT_2}
+    depends_on:
+      - back
+    networks:
+      - ${DOCKER_NETWORK}
+
+networks:
+  microcrm-net:

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <include resource="org/springframework/boot/logging/logback/base.xml"/>
+
+  <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="projet7-back"/>
+  <springProperty scope="context" name="LOGSTASH_HOST" source="logstash.host" defaultValue="localhost"/>
+  <springProperty scope="context" name="LOGSTASH_PORT" source="logstash.port" defaultValue="5000"/>
+
+  <!-- Console toujours active -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"application":"${APP_NAME}"}</customFields>
+    </encoder>
+  </appender>
+
+  <!-- Appender Logstash ET sa référence : tout dans le même springProfile -->
+  <springProfile name="!test">
+    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+      <destination>${LOGSTASH_HOST}:${LOGSTASH_PORT}</destination>
+      <reconnectionDelay>10 seconds</reconnectionDelay>
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <customFields>{"application":"${APP_NAME}"}</customFields>
+      </encoder>
+    </appender>
+
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+      <appender-ref ref="LOGSTASH"/>
+    </root>
+  </springProfile>
+
+  <!-- Root logger pour le profil test : console uniquement -->
+  <springProfile name="test">
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+
+  <logger name="org.springframework" level="WARN"/>
+  <logger name="org.hibernate"       level="WARN"/>
+  <logger name="com.zaxxer.hikari"   level="WARN"/>
+
+</configuration>
