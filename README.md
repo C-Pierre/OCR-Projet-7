@@ -2,6 +2,17 @@
    <img src="./front/src/favicon.png" width="192px" />
 </p>
 
+---
+
+# Information
+
+<p style="font-weight: bold; color: red;">IMPORTANT</p>
+
+Ne plus tenir compte des instructions d'installation de ce fichier.         
+Se référer mainteant aux instructions du second fichier [README.md](/_doc/README.md) mis en place dans le cadre de l'exercice du module "P7 - Développeur Full-Stack".
+
+---
+
 # MicroCRM (P7 - Développeur Full-Stack - Java et Angular - Mettez en œuvre l'intégration et le déploiement continu d'une application Full-Stack)
 
 MicroCRM est une application de démonstration basique ayant pour être objectif de servir de socle pour le module "P7 - Développeur Full-Stack".
